@@ -1,0 +1,13 @@
+{
+  "name": "atrakcje-backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "express": "^4.21.0",
+    "axios": "^1.7.0",
+    "cheerio": "^1.0.0",
+    "node-cron": "^3.0.3"
+  },
+  "engines": { "node": ">=18" }
+}
