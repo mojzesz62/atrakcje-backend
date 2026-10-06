@@ -13,7 +13,7 @@ let REFRESH_STATUS = { ok: false, problems: [] };
 const SOURCES = [
   { name: 'Visit Opolskie', url: 'https://visitopolskie.pl/wydarzenia', parse: parseVisit },
   { name: 'Opolskie Lamy', url: 'https://festiwal.opolskielamy.pl', parse: parseLamyV2 },
-  { name: 'opole.pl', url: 'https://www.opole.pl/dla-mieszka%C5%84ca/wydarzenia', parse: parseOpole }
+  { name: 'opole.pl', url: 'https://www.opole.pl/dla-mieszka%C5%84ca', parse: parseOpole }
 ];
 
 function pad(n){ return String(n).padStart(2,'0'); }
