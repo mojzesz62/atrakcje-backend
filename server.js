@@ -110,32 +110,33 @@ function parseVisit(html){
 function parseLamy(html){
   const $ = cheerio.load(html);
   const out = [];
-  const seen = new Set();
-  $('.scheduled-event').each((i, row) => {
-    const titleEl = $(row).find('.event-title');
-    const title = titleEl.length ? titleEl.text().replace(/\s+/g,' ').trim() : '';
-    const date = $(row).attr('data-date') || allDates($(row).text())[0] || '';
-    if (!title || !date) return;
-    const key = title.toLowerCase()+'|'+date;
-    if (seen.has(key)) return;
-    seen.add(key);
-    const timeEl = $(row).find('.time-starts');
-    const descEl = $(row).find('.event-content');
-    const a = $(row).find('.event-content a').first();
-    const href = a.length ? (a.attr('href')||'') : 'https://festiwal.opolskielamy.pl';
-    out.push(buildEvent({
-      title,
-      city: 'Opole',
-      venue: ($(row).attr('data-location')||'Opole').replace(/-/g,' '),
-      startDate: date,
-      endDate: date,
-      time: timeEl.length ? timeEl.text().trim() : '',
-      description: descEl.length ? descEl.text() : title,
-      sourceUrl: href.startsWith('http') ? href : 'https://festiwal.opolskielamy.pl'+href,
-      sourceName: 'Opolskie Lamy',
-      category: 'Film'
-    }));
-  });
+  
+  // Zamiast każdego seansu osobno - jedno wydarzenie festiwalowe
+  // Zakres dat: 2-10 października 2026
+  // Sprawdzamy czy festiwal jest aktualnie na stronie
+  
+  const title = "24. Festiwal Filmowy Opolskie Lamy";
+  const startDate = "2026-10-02";
+  const endDate = "2026-10-10";
+  
+  // Sprawdź czy strona zawiera festiwal
+  const pageText = $("body").text();
+  if (!pageText.includes("Opolskie Lamy") && !pageText.includes("Festiwal Filmowy")) {
+    return out;
+  }
+  
+  out.push(buildEvent({
+    title,
+    city: "Opole",
+    venue: "Kina Meduza, Opole",
+    startDate,
+    endDate,
+    description: "Festiwal filmowy pod motywem DOBRO. Pokazy filmów, spotkania z twórcami, atmosfera miasta.",
+    sourceUrl: "https://festiwal.opolskielamy.pl",
+    sourceName: "Opolskie Lamy",
+    category: "Film"
+  }));
+  
   return out;
 }
 
