@@ -27,6 +27,8 @@ function allDates(text){
   while ((m = re1.exec(src))) out.push(m[3]+'-'+pad(m[2])+'-'+pad(m[1]));
   const re2 = /(\d{4})-(\d{2})-(\d{2})/g;
   while ((m = re2.exec(src))) out.push(m[0]);
+    const re3 = /(\d{1,2})\/(\d{1,2})\/(\d{4})/g;
+  while ((m = re3.exec(src))) out.push(m[3]+'-'+pad(m[2])+'-'+pad(m[1]));
   return out;
 }
 
@@ -65,30 +67,48 @@ function buildEvent(p){
 function parseVisit(html){
   const $ = cheerio.load(html);
   const out = [];
+
   $('.wiersz-wydarzenia').each((i, row) => {
     const a = $(row).find('a').first();
     const titleEl = $(row).find('.opolskie-top-tytul-kolor');
-    let title = (titleEl.length ? titleEl.text() : a.attr('title') || '').replace(/\s+/g,' ').trim();
-    const info = $(row).find('.info').text() || '';
-    const dates = allDates(info);
-    if (!a.length || !title || !dates.length) return;
+    let title = (titleEl.length ? titleEl.text() : a.attr('title') || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const info = $(row).find('.info').text().replace(/\s+/g, ' ').trim();
+    const href = a.attr('href') || '';
+    if (!title || !href) return;
+
+    // Regex na DD/MM/YYYY (Visit Opolskie używa slasha!)
+    const found = [];
+    const re = /(\d{1,2})\/(\d{1,2})\/(\d{4})/g;
+    let m;
+    while ((m = re.exec(info))) {
+      found.push(m[3] + '-' + pad(m[2]) + '-' + pad(m[1]));
+    }
+    if (!found.length) return;
+
     let city = 'Opolskie';
     const bits = title.split('|');
-    if (bits.length > 1 && bits[0].trim().length < 32){
+    if (bits.length > 1 && bits[0].trim().length < 32) {
       city = bits[0].trim();
       title = bits.slice(1).join('|').trim();
     }
-    const href = a.attr('href') || '';
-    const link = href.startsWith('http') ? href : 'https://visitopolskie.pl' + href;
+
+    const sourceUrl = href.startsWith('http')
+      ? href
+      : 'https://visitopolskie.pl' + href;
+
     out.push(buildEvent({
-      title, city,
-      startDate: dates[0],
-      endDate: dates[dates.length-1],
-      description: info,
-      sourceUrl: link,
+      title,
+      city,
+      startDate: found[0],
+      endDate: found[found.length - 1],
+      description: info.replace(/^Data wydarzenia:\s*/i, '').trim() || title,
+      sourceUrl,
       sourceName: 'Visit Opolskie'
     }));
   });
+
   return out;
 }
 
