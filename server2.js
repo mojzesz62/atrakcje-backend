@@ -41,6 +41,21 @@ function makeId(title, date){
     .slice(0,72);
 }
 
+/* === FILTR ŚMIECI === */
+const JUNK_PATTERNS = [
+  /^godziny otwarcia$/i,
+  /^dziś w bibliotece$/i,
+  /^dzis w bibliotece$/i,
+  /^wystawy czasowe$/i,
+  /zaproszenie do składania ofert/i,
+  /przetarg/i,
+  /^ogloszenie$/i,
+  /^ogłoszenie$/i,
+];
+function isJunk(title) {
+  return JUNK_PATTERNS.some(re => re.test(String(title||'').trim()));
+}
+
 function buildEvent(p){
   const title = String(p.title||'').replace(/\s+/g,' ').trim();
   return {
@@ -78,6 +93,7 @@ function parseVisit(html){
     const info = $(row).find('.info').text().replace(/\s+/g, ' ').trim();
     const href = a.attr('href') || '';
     if (!title || !href) return;
+    if (isJunk(title)) return;
 
     const found = [];
     const re = /(\d{1,2})\/(\d{1,2})\/(\d{4})/g;
@@ -132,7 +148,7 @@ function parseLamyV2(html){
 /* ===== OPLE.PL ===== */
 const CAT_MAP = {
   'koncerty': 'Koncert',
-  'filmy / spektakle': 'Film',
+  'filmy / spektakle': 'Teatr',
   'sport': 'Sport',
   'spotkania / warsztaty': 'Warsztaty',
   'wystawy / targi': 'Wystawa'
@@ -147,6 +163,7 @@ function parseOpole(html){
     const catEl = $(art).find('.field--name-field-event-category .field__item').first();
     if (!titleA.length || !dateEl.length) return;
     const title = titleA.text().replace(/\s+/g,' ').trim();
+    if (isJunk(title)) return;
     const href = titleA.attr('href') || '';
     const link = href.startsWith('http') ? href : 'https://www.opole.pl' + href;
     const dateText = dateEl.text().replace(/\s+/g,' ').trim();
@@ -177,20 +194,21 @@ const TUO_CITIES = [
   'Głubczyce', 'Niemodlin', 'Paczków', 'Moszna', 'Baborów'
 ];
 
+/* === POPRAWIONA KOLEJNOŚĆ KATEGORII === */
 function guessCategory(title) {
-  const t = title.toLowerCase();
+  const t = String(title||'').toLowerCase();
   if (/stand-?up/.test(t)) return 'Stand-up';
-  if (/koncert|filharmonia|recital|orkiestr/.test(t)) return 'Koncert';
-  if (/film|kino|projekcj|festiwal film/.test(t)) return 'Film';
-  if (/teatr|spektakl|lalki|monodram/.test(t)) return 'Teatr';
+  if (/teatr|spektakl|lalki|monodram|przedstawienie|balet/.test(t)) return 'Teatr';
+  if (/wystaw|wernisaż|wernisaz|galeri|ekspozycj|muzeum/.test(t)) return 'Wystawa';
+  if (/koncert|filharmonia|recital|orkiestr|muzyka|jazz|organow|organow|koncert|tenor|śpiew|piosenk/.test(t)) return 'Koncert';
+  if (/film|kino|projekcj|seans|festiwal film/.test(t)) return 'Film';
   if (/senior/.test(t)) return 'Seniorzy';
-  if (/bieg|półmaraton|maraton|parkrun|mecz|turniej|sport/.test(t)) return 'Sport';
-  if (/warsztat|zajęcia|lekcj|spotkanie autorsk/.test(t)) return 'Warsztaty';
-  if (/kulin|kolacj|food|degustac|gotowan/.test(t)) return 'Kulinaria';
-  if (/wystaw|wernisaż|galeri/.test(t)) return 'Wystawa';
-  if (/festyn|jarmark|odpust|piknik/.test(t)) return 'Festyn';
-  if (/msza|paraf|pielgrzym|religij|kościół|kosciol/.test(t)) return 'Religijne';
-  if (/dzieci|rodzin|bajk|lalk/.test(t)) return 'Rodzinne';
+  if (/bieg|półmaraton|polmaraton|maraton|parkrun|mecz|turniej|sport|zawody/.test(t)) return 'Sport';
+  if (/warsztat|zajęcia|zajecia|lekcj|spotkanie autorsk|konferencj|forum|wykład|prelekcj/.test(t)) return 'Warsztaty';
+  if (/kulin|kolacj|food|degustac|gotowan|czekolad/.test(t)) return 'Kulinaria';
+  if (/festyn|jarmark|odpust|piknik|festiwal/.test(t)) return 'Festyn';
+  if (/msza|paraf|pielgrzym|religij|kościół|kosciol|misterium/.test(t)) return 'Religijne';
+  if (/dzieci|rodzin|bajk|lalk|mama|tata|maluch/.test(t)) return 'Rodzinne';
   return 'Rodzinne';
 }
 
@@ -217,6 +235,7 @@ function parseTuOpolskie(html) {
     const title = (btn.attr('data-title') || card.find('h3').first().text() || '')
       .replace(/\s+/g, ' ')
       .trim();
+    if (isJunk(title)) return;
     const startDate = (btn.attr('data-date') || '').trim();
     if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return;
 
@@ -271,8 +290,15 @@ async function scrapeSource(source){
   return source.parse(res.data);
 }
 
+/* === POPRAWIONA DEDUPLIKACJA === */
 function normKey(title, date){
-  return String(title||'').toLowerCase().replace(/\s+/g,' ').trim()+'|'+(date||'');
+  const normalized = String(title||'')
+    .toLowerCase()
+    .replace(/[""''„"]/g, '')
+    .replace(/[^a-z0-9ąćęłńóśźż\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized + '|' + (date || '');
 }
 
 function mergeEvents(events){
