@@ -13,7 +13,8 @@ let REFRESH_STATUS = { ok: false, problems: [] };
 const SOURCES = [
   { name: 'Visit Opolskie', url: 'https://visitopolskie.pl/wydarzenia', parse: parseVisit },
   { name: 'Opolskie Lamy', url: 'https://festiwal.opolskielamy.pl', parse: parseLamyV2 },
-  { name: 'opole.pl', url: 'https://www.opole.pl/dla-mieszka%C5%84ca', parse: parseOpole }
+  { name: 'opole.pl', url: 'https://www.opole.pl/dla-mieszka%C5%84ca', parse: parseOpole },
+  { name: 'tuopolskie.pl', url: 'https://tuopolskie.pl/', parse: parseTuOpolskie }
 ];
 
 function pad(n){ return String(n).padStart(2,'0'); }
@@ -27,7 +28,7 @@ function allDates(text){
   while ((m = re1.exec(src))) out.push(m[3]+'-'+pad(m[2])+'-'+pad(m[1]));
   const re2 = /(\d{4})-(\d{2})-(\d{2})/g;
   while ((m = re2.exec(src))) out.push(m[0]);
-    const re3 = /(\d{1,2})\/(\d{1,2})\/(\d{4})/g;
+  const re3 = /(\d{1,2})\/(\d{1,2})\/(\d{4})/g;
   while ((m = re3.exec(src))) out.push(m[3]+'-'+pad(m[2])+'-'+pad(m[1]));
   return out;
 }
@@ -63,7 +64,7 @@ function buildEvent(p){
   };
 }
 
-// ===== VISIT OPOLSKIE =====
+/* ===== VISIT OPOLSKIE ===== */
 function parseVisit(html){
   const $ = cheerio.load(html);
   const out = [];
@@ -78,7 +79,6 @@ function parseVisit(html){
     const href = a.attr('href') || '';
     if (!title || !href) return;
 
-    // Regex na DD/MM/YYYY (Visit Opolskie używa slasha!)
     const found = [];
     const re = /(\d{1,2})\/(\d{1,2})\/(\d{4})/g;
     let m;
@@ -112,10 +112,9 @@ function parseVisit(html){
   return out;
 }
 
-// ===== OPOLSKIE LAMY (JEDNO WYDARZENIE) =====
+/* ===== OPOLSKIE LAMY (JEDNO WYDARZENIE) ===== */
 function parseLamyV2(html){
   const out = [];
-  // Jedno wydarzenie: cały festiwal
   out.push(buildEvent({
     title: "24. Festiwal Filmowy Opolskie Lamy",
     city: "Opole",
@@ -130,7 +129,7 @@ function parseLamyV2(html){
   return out;
 }
 
-// ===== OPLE.PL =====
+/* ===== OPLE.PL ===== */
 const CAT_MAP = {
   'koncerty': 'Koncert',
   'filmy / spektakle': 'Film',
@@ -170,10 +169,100 @@ function parseOpole(html){
   return out;
 }
 
-// ===== POBIERANIE =====
+/* ===== TUOPOLSKIE.PL ===== */
+const TUO_CITIES = [
+  'Kędzierzyn-Koźle', 'Strzelce Opolskie', 'Kluczbork', 'Namysłów',
+  'Głuchołazy', 'Krapkowice', 'Prudnik', 'Opole', 'Nysa', 'Brzeg',
+  'Ozimek', 'Grodków', 'Łambinowice', 'Prószków', 'Otmuchów',
+  'Głubczyce', 'Niemodlin', 'Paczków', 'Moszna', 'Baborów'
+];
+
+function guessCategory(title) {
+  const t = title.toLowerCase();
+  if (/stand-?up/.test(t)) return 'Stand-up';
+  if (/koncert|filharmonia|recital|orkiestr/.test(t)) return 'Koncert';
+  if (/film|kino|projekcj|festiwal film/.test(t)) return 'Film';
+  if (/teatr|spektakl|lalki|monodram/.test(t)) return 'Teatr';
+  if (/senior/.test(t)) return 'Seniorzy';
+  if (/bieg|półmaraton|maraton|parkrun|mecz|turniej|sport/.test(t)) return 'Sport';
+  if (/warsztat|zajęcia|lekcj|spotkanie autorsk/.test(t)) return 'Warsztaty';
+  if (/kulin|kolacj|food|degustac|gotowan/.test(t)) return 'Kulinaria';
+  if (/wystaw|wernisaż|galeri/.test(t)) return 'Wystawa';
+  if (/festyn|jarmark|odpust|piknik/.test(t)) return 'Festyn';
+  if (/msza|paraf|pielgrzym|religij|kościół|kosciol/.test(t)) return 'Religijne';
+  if (/dzieci|rodzin|bajk|lalk/.test(t)) return 'Rodzinne';
+  return 'Rodzinne';
+}
+
+function guessCity(title, venue, sourceHost) {
+  const blob = `${title} ${venue}`;
+  const pref = (title.split('|')[0] || '').trim();
+  for (const city of TUO_CITIES) {
+    if (pref.toLowerCase().startsWith(city.toLowerCase())) return city;
+  }
+  for (const city of TUO_CITIES) {
+    if (blob.toLowerCase().includes(city.toLowerCase())) return city;
+  }
+  if (/opole\.pl|filharmonia\.opole|teatropole|galeriaopole|kinomeduza/.test(sourceHost)) return 'Opole';
+  return 'Opolskie';
+}
+
+function parseTuOpolskie(html) {
+  const $ = cheerio.load(html);
+  const out = [];
+
+  $('article.event-card').each((i, el) => {
+    const card = $(el);
+    const btn = card.find('button.calendar-add').first();
+    const title = (btn.attr('data-title') || card.find('h3').first().text() || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const startDate = (btn.attr('data-date') || '').trim();
+    if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return;
+
+    let endDate = (btn.attr('data-end-date') || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) endDate = startDate;
+
+    let time = (btn.attr('data-time') || '').trim();
+    if (!/^\d{1,2}:\d{2}$/.test(time)) {
+      const meta = card.find('.event-meta').first().text();
+      const m = meta.match(/(\d{1,2}:\d{2})/);
+      time = m ? m[1] : '';
+    }
+
+    const venue = card.find('.event-location').first().text().replace(/\s+/g, ' ').trim()
+      || (btn.attr('data-location') || '').replace(/\s+/g, ' ').trim();
+    const sourceHost = card.find('.event-meta .source').first().text().trim();
+
+    let sourceUrl = (btn.attr('data-url') || card.find('a.event-link').attr('href') || '').trim();
+    if (!sourceUrl) {
+      const internal = card.find('a[href^="/wydarzenie/"]').attr('href') || '';
+      sourceUrl = internal ? 'https://tuopolskie.pl' + internal : 'https://tuopolskie.pl/';
+    }
+
+    const city = guessCity(title, venue, sourceHost);
+
+    out.push(buildEvent({
+      title,
+      city,
+      venue: venue || city,
+      startDate,
+      endDate,
+      time,
+      description: venue ? `${title}. ${venue}` : title,
+      sourceUrl,
+      sourceName: 'tuopolskie.pl',
+      category: guessCategory(title)
+    }));
+  });
+
+  return out;
+}
+
+/* ===== POBIERANIE ===== */
 async function scrapeSource(source){
   const res = await axios.get(source.url, {
-    timeout: 15000,
+    timeout: 25000,
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; AtrakcjeBot/1.0)',
       'Accept': 'text/html,application/xhtml+xml'
@@ -216,6 +305,7 @@ async function refreshAll(){
   console.log(`[refresh] Gotowe. ${EVENTS.length} unikalnych wydarzeń.`);
 }
 
+/* ===== API ===== */
 app.get('/api/events', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.json({
@@ -246,11 +336,13 @@ app.get('/health', (req, res) => {
   });
 });
 
+/* ===== CRON ===== */
 cron.schedule('0 */6 * * *', () => {
   console.log('[cron] Automatyczne odświeżanie...');
   refreshAll();
 });
 
+/* ===== START ===== */
 app.listen(PORT, () => {
   console.log(`Backend działa na porcie ${PORT}`);
   refreshAll();
