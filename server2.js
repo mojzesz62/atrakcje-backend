@@ -40,17 +40,26 @@ function isJunk(title) {
   return JUNK_PATTERNS.some(re => re.test(String(title||'').trim()));
 }
 
-/* === VENUE CZYSZCZENIE === */
+/* === POPRAWIONA FUNKCJA cleanVenue === */
+/* Słowa kluczowe, które oznaczają prawdziwe miejsce wydarzenia */
+const VENUE_KEYWORDS = /kino|teatr|filharmonia|arena|muzeum|bibliotek|ul\.|plac|galeri|scena|klub|hala|park|zamek|rynek|ratusz|kościół|kosciol|dom kultury|centrum|amfiteatr|opera|szkoła|szkola|uniwersytet|akademi|sala|duk|mdk|mbp|wbp|nccp|opo\b|stegu|itaka|helios|meduza|piast|weneda/i;
+
 function cleanVenue(venue, city) {
   let v = String(venue || '').replace(/\s+/g, ' ').trim();
   if (!v) return city;
+  
   // Odetnij długie fragmenty artykułów (np. > 80 znaków z "…")
   if (v.length > 80 || v.includes('…') || v.includes('...')) {
-    // Weź tylko pierwszą część do pierwszego przecinka/kropki, maks 50 znaków
     const cut = v.split(/[.,]/)[0].trim();
-    if (cut.length >= 3 && cut.length <= 60) return cut;
+    if (cut.length >= 3 && cut.length <= 60) v = cut;
+    else return city;
+  }
+  
+  // NOWE: jeśli venue NIE zawiera słowa kluczowego miejsca – to śmieć, zwróć miasto
+  if (!VENUE_KEYWORDS.test(v)) {
     return city;
   }
+  
   return v;
 }
 
@@ -117,8 +126,9 @@ function guessCity(title, venue, sourceHost) {
   for (const city of TUO_CITIES) {
     if (blob.includes(city.toLowerCase())) return city;
   }
-  // Rozszerzony regex hostów
-  if (/opole\.pl|filharmonia\.opole|teatropole|galeriaopole|kinomeduza|mbp\.opole|muzeum\.opole|biletyna\.pl|faktyopole|halaopole|itakaarena|muzeumpiosenki|teatr|filharmonia/.test(sourceHost)) return 'Opole';
+  
+  // ROZSZERZONY regex hostów – dodano visitopolskie, muzeumpiosenki, teatropole
+  if (/opole\.pl|filharmonia\.opole|teatropole|galeriaopole|kinomeduza|mbp\.opole|muzeum\.opole|biletyna\.pl|faktyopole|halaopole|itakaarena|muzeumpiosenki|visitopolskie|teatr|filharmonia/.test(sourceHost)) return 'Opole';
   return 'Opolskie';
 }
 
@@ -206,15 +216,12 @@ function normKey(title, date){
 }
 
 function mergeEvents(events){
-  // Krok 1: Deduplikacja po tytuł + data
   const map = new Map();
   events.forEach(e => {
     const key = normKey(e.title, e.startDate);
     if (!map.has(key)) map.set(key, e);
   });
   
-  // Krok 2: Zwiń powtarzalne – ten sam tytuł, różne daty
-  // Grupuj po samym tytule (bez daty)
   const byTitle = new Map();
   [...map.values()].forEach(e => {
     const tKey = normTitle(e.title);
@@ -223,8 +230,7 @@ function mergeEvents(events){
   });
   
   const result = [];
-  byTitle.forEach((group, tKey) => {
-    // Sortuj po dacie
+  byTitle.forEach((group) => {
     group.sort((a,b) => a.startDate.localeCompare(b.startDate));
     
     if (group.length === 1) {
@@ -232,8 +238,6 @@ function mergeEvents(events){
       return;
     }
     
-    // Jeśli > 1 wystąpienie tego samego tytułu:
-    // Zostaw pierwsze, a w description dopisz "i inne terminy"
     const first = group[0];
     const laterCount = group.length - 1;
     first.description = (first.description + ` (i ${laterCount} innych terminów)`).slice(0, 400);
