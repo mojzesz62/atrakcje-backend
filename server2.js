@@ -40,23 +40,15 @@ function isJunk(title) {
   return JUNK_PATTERNS.some(re => re.test(String(title||'').trim()));
 }
 
-/* === POPRAWIONA FUNKCJA cleanVenue === */
-/* Słowa kluczowe, które oznaczają prawdziwe miejsce wydarzenia */
-const VENUE_KEYWORDS = /kino|teatr|filharmonia|arena|muzeum|bibliotek|ul\.|plac|galeri|scena|klub|hala|park|zamek|rynek|ratusz|kościół|kosciol|dom kultury|centrum|amfiteatr|opera|szkoła|szkola|uniwersytet|akademi|sala|duk|mdk|mbp|wbp|nccp|opo\b|stegu|itaka|helios|meduza|piast|weneda/i;
-
+/* === cleanVenue – WYCOFANE, tylko ucinanie długich === */
 function cleanVenue(venue, city) {
   let v = String(venue || '').replace(/\s+/g, ' ').trim();
   if (!v) return city;
   
-  // Odetnij długie fragmenty artykułów (np. > 80 znaków z "…")
-  if (v.length > 80 || v.includes('…') || v.includes('...')) {
+  // Odetnij długie fragmenty artykułów (> 100 znaków lub z "...")
+  if (v.length > 100 || v.includes('…') || v.includes('...')) {
     const cut = v.split(/[.,]/)[0].trim();
-    if (cut.length >= 3 && cut.length <= 60) v = cut;
-    else return city;
-  }
-  
-  // NOWE: jeśli venue NIE zawiera słowa kluczowego miejsca – to śmieć, zwróć miasto
-  if (!VENUE_KEYWORDS.test(v)) {
+    if (cut.length >= 3 && cut.length <= 60) return cut;
     return city;
   }
   
@@ -127,7 +119,7 @@ function guessCity(title, venue, sourceHost) {
     if (blob.includes(city.toLowerCase())) return city;
   }
   
-  // ROZSZERZONY regex hostów – dodano visitopolskie, muzeumpiosenki, teatropole
+  // Rozszerzony regex hostów
   if (/opole\.pl|filharmonia\.opole|teatropole|galeriaopole|kinomeduza|mbp\.opole|muzeum\.opole|biletyna\.pl|faktyopole|halaopole|itakaarena|muzeumpiosenki|visitopolskie|teatr|filharmonia/.test(sourceHost)) return 'Opole';
   return 'Opolskie';
 }
