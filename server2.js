@@ -10,7 +10,6 @@ let EVENTS = [];
 let LAST_REFRESH = null;
 let REFRESH_STATUS = { ok: false, problems: [] };
 
-/* ===== JEDNO ŹRÓDŁO: tuopolskie.pl ===== */
 const SOURCES = [
   { name: 'tuopolskie.pl', url: 'https://tuopolskie.pl/', parse: parseTuOpolskie }
 ];
@@ -41,14 +40,30 @@ function isJunk(title) {
   return JUNK_PATTERNS.some(re => re.test(String(title||'').trim()));
 }
 
+/* === VENUE CZYSZCZENIE === */
+function cleanVenue(venue, city) {
+  let v = String(venue || '').replace(/\s+/g, ' ').trim();
+  if (!v) return city;
+  // Odetnij długie fragmenty artykułów (np. > 80 znaków z "…")
+  if (v.length > 80 || v.includes('…') || v.includes('...')) {
+    // Weź tylko pierwszą część do pierwszego przecinka/kropki, maks 50 znaków
+    const cut = v.split(/[.,]/)[0].trim();
+    if (cut.length >= 3 && cut.length <= 60) return cut;
+    return city;
+  }
+  return v;
+}
+
 function buildEvent(p){
   const title = String(p.title||'').replace(/\s+/g,' ').trim();
+  const city = p.city || 'Opolskie';
+  const venue = cleanVenue(p.venue, city);
   return {
     id: makeId(title, p.startDate) || ('ev-'+Date.now()),
     title,
     category: p.category || 'Rodzinne',
-    city: p.city || 'Opolskie',
-    venue: p.venue || p.city || '',
+    city,
+    venue,
     startDate: p.startDate,
     endDate: p.endDate || p.startDate,
     time: p.time || '',
@@ -64,46 +79,21 @@ function buildEvent(p){
   };
 }
 
-/* === POPRAWIONA KOLEJNOŚĆ KATEGORII === */
+/* === KATEGORIE === */
 function guessCategory(title) {
   const t = String(title||'').toLowerCase();
-  
-  // Stand-up
   if (/stand-?up/.test(t)) return 'Stand-up';
-  
-  // Teatr (przed filmem!)
   if (/teatr|spektakl|lalki|monodram|przedstawienie|balet|opera/.test(t)) return 'Teatr';
-  
-  // Wystawa (przed filmem!)
-  if (/wystaw|wernisaż|wernisaz|galeri|ekspozycj|muzeum|wystaw|fotogaleria/.test(t)) return 'Wystawa';
-  
-  // Koncert (przed filmem!)
-  if (/koncert|filharmonia|recital|orkiestr|muzyka|jazz|organow|tenor|śpiew|piosenk|zespół|grupa|trasa|tour|diamentowa|symfonicz|kwartet|chór|chór/.test(t)) return 'Koncert';
-  
-  // Film
+  if (/wystaw|wernisaż|wernisaz|galeri|ekspozycj|muzeum|fotogaleria/.test(t)) return 'Wystawa';
+  if (/koncert|filharmonia|recital|orkiestr|muzyka|jazz|organow|tenor|śpiew|piosenk|zespół|grupa|trasa|tour|diamentowa|symfonicz|kwartet|chór/.test(t)) return 'Koncert';
   if (/film|kino|projekcj|seans|festiwal film|pokaz film|multimedia/.test(t)) return 'Film';
-  
-  // Seniorzy
   if (/senior/.test(t)) return 'Seniorzy';
-  
-  // Sport
   if (/bieg|półmaraton|polmaraton|maraton|parkrun|mecz|turniej|sport|zawody|zumba|joga|pływanie|siłownia/.test(t)) return 'Sport';
-  
-  // Warsztaty / spotkania
   if (/warsztat|zajęcia|zajecia|lekcj|spotkanie autorsk|konferencj|forum|wykład|prelekcj|spotkanie|klub|dyskusyjny/.test(t)) return 'Warsztaty';
-  
-  // Kulinaria
   if (/kulin|kolacj|food|degustac|gotowan|czekolad|kawa|herbata|słodkości|smak/.test(t)) return 'Kulinaria';
-  
-  // Festyn / jarmark
   if (/festyn|jarmark|odpust|piknik|festiwal|fest/.test(t)) return 'Festyn';
-  
-  // Religijne
   if (/msza|paraf|pielgrzym|religij|kościół|kosciol|misterium|modlitw|kolędy|koledy/.test(t)) return 'Religijne';
-  
-  // Rodzinne (na końcu)
   if (/dzieci|rodzin|bajk|lalk|mama|tata|maluch|przedszkol/.test(t)) return 'Rodzinne';
-  
   return 'Rodzinne';
 }
 
@@ -127,7 +117,8 @@ function guessCity(title, venue, sourceHost) {
   for (const city of TUO_CITIES) {
     if (blob.includes(city.toLowerCase())) return city;
   }
-  if (/opole\.pl|filharmonia\.opole|teatropole|galeriaopole|kinomeduza|mbp\.opole|muzeum\.opole/.test(sourceHost)) return 'Opole';
+  // Rozszerzony regex hostów
+  if (/opole\.pl|filharmonia\.opole|teatropole|galeriaopole|kinomeduza|mbp\.opole|muzeum\.opole|biletyna\.pl|faktyopole|halaopole|itakaarena|muzeumpiosenki|teatr|filharmonia/.test(sourceHost)) return 'Opole';
   return 'Opolskie';
 }
 
@@ -200,24 +191,56 @@ async function scrapeSource(source){
   return source.parse(res.data);
 }
 
-/* === DEDUPLIKACJA (prosta, bo mamy 1 źródło) === */
-function normKey(title, date){
-  const normalized = String(title||'')
+/* === DEDUPLIKACJA + ZWIJANIE POWTARZALNYCH === */
+function normTitle(title){
+  return String(title||'')
     .toLowerCase()
     .replace(/[""''„"]/g, '')
     .replace(/[^a-z0-9ąćęłńóśźż\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  return normalized + '|' + (date || '');
+}
+
+function normKey(title, date){
+  return normTitle(title) + '|' + (date || '');
 }
 
 function mergeEvents(events){
+  // Krok 1: Deduplikacja po tytuł + data
   const map = new Map();
   events.forEach(e => {
     const key = normKey(e.title, e.startDate);
     if (!map.has(key)) map.set(key, e);
   });
-  return [...map.values()];
+  
+  // Krok 2: Zwiń powtarzalne – ten sam tytuł, różne daty
+  // Grupuj po samym tytule (bez daty)
+  const byTitle = new Map();
+  [...map.values()].forEach(e => {
+    const tKey = normTitle(e.title);
+    if (!byTitle.has(tKey)) byTitle.set(tKey, []);
+    byTitle.get(tKey).push(e);
+  });
+  
+  const result = [];
+  byTitle.forEach((group, tKey) => {
+    // Sortuj po dacie
+    group.sort((a,b) => a.startDate.localeCompare(b.startDate));
+    
+    if (group.length === 1) {
+      result.push(group[0]);
+      return;
+    }
+    
+    // Jeśli > 1 wystąpienie tego samego tytułu:
+    // Zostaw pierwsze, a w description dopisz "i inne terminy"
+    const first = group[0];
+    const laterCount = group.length - 1;
+    first.description = (first.description + ` (i ${laterCount} innych terminów)`).slice(0, 400);
+    result.push(first);
+  });
+  
+  return result;
 }
 
 async function refreshAll(){
@@ -235,7 +258,10 @@ async function refreshAll(){
       problems.push(src.name);
     }
   }
+  const before = all.length;
   EVENTS = mergeEvents(all);
+  const after = EVENTS.length;
+  console.log(`[refresh] Deduplikacja: ${before} → ${after} (zwinięto ${before - after})`);
   LAST_REFRESH = new Date().toISOString();
   REFRESH_STATUS = { ok: problems.length === 0, problems };
   console.log(`[refresh] Gotowe. ${EVENTS.length} unikalnych wydarzeń.`);
