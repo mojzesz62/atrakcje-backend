@@ -46,7 +46,32 @@ function isExcludedCategory(category) {
   return EXCLUDED_CATEGORIES.includes(category);
 }
 
-/* === cleanVenue === */
+/* === DODATKOWY FILTR TYTUŁÓW TEATRALNYCH === */
+/* Spektakle, które nie mają w tytule "teatr" ani "spektakl" */
+const THEATER_TITLE_PATTERNS = [
+  /sztuka kochania/i,
+  /wyszłam z siebie/i,
+  /wyszedłem z siebie/i,
+  /ziemia obiecana/i,
+  /autentik/i,
+  /sprawiedliwy/i,
+  /między łóżkami/i,
+  /ding dong/i,
+  /mąż mojej żony/i,
+  /spektakl/i,
+  /przedstawienie/i,
+  /monodram/i,
+  /lalki i aktora/i,
+  /teatr/i,
+  /teatraln/i,
+  /balet/i,
+  /opera\b/i,
+];
+function isTheaterTitle(title) {
+  return THEATER_TITLE_PATTERNS.some(re => re.test(String(title||'')));
+}
+
+/* === cleanVenue – tylko ucinanie długich === */
 function cleanVenue(venue, city) {
   let v = String(venue || '').replace(/\s+/g, ' ').trim();
   if (!v) return city;
@@ -142,6 +167,7 @@ function parseTuOpolskie(html) {
     
     if (!title) return;
     if (isJunk(title)) return;
+    if (isTheaterTitle(title)) return;  // NOWE: filtr teatru po tytule
     
     const startDate = (btn.attr('data-date') || '').trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return;
@@ -201,7 +227,7 @@ async function scrapeSource(source){
   return source.parse(res.data);
 }
 
-/* === DEDUPLIKACJA + ZWIJANIE POWTARZALNYCH === */
+/* === DEDUPLIKACJA + ZWIJANIE POWTARZALNYCH + FUZZY MATCHING === */
 function normTitle(title){
   return String(title||'')
     .toLowerCase()
@@ -215,15 +241,47 @@ function normKey(title, date){
   return normTitle(title) + '|' + (date || '');
 }
 
+/* === FUZZY: podobieństwo tytułów (ile wspólnych słów) === */
+function titleSimilarity(a, b) {
+  const stopWords = new Set(['w', 'we', 'na', 'do', 'z', 'ze', 'i', 'o', 'od', 'po', 'za', 'dla', 'się', 'sie', 'the', 'a', 'an']);
+  const wordsA = normTitle(a).split(' ').filter(w => w.length > 2 && !stopWords.has(w));
+  const wordsB = normTitle(b).split(' ').filter(w => w.length > 2 && !stopWords.has(w));
+  if (!wordsA.length || !wordsB.length) return 0;
+  
+  const setA = new Set(wordsA);
+  let common = 0;
+  for (const w of wordsB) {
+    if (setA.has(w)) common++;
+  }
+  return common / Math.min(wordsA.length, wordsB.length);
+}
+
+/* === Główna funkcja deduplikacji === */
 function mergeEvents(events){
+  // Krok 1: Deduplikacja po tytuł + data
   const map = new Map();
   events.forEach(e => {
     const key = normKey(e.title, e.startDate);
     if (!map.has(key)) map.set(key, e);
   });
   
-  const byTitle = new Map();
+  // Krok 2: Fuzzy deduplikacja – usuń wydarzenia, które są bardzo podobne do już dodanych
+  const unique = [];
   [...map.values()].forEach(e => {
+    const isDuplicate = unique.some(u => {
+      // Ten sam dzień?
+      if (u.startDate !== e.startDate) return false;
+      // Ten sam typ?
+      if (u.category !== e.category) return false;
+      // Podobne tytuły (> 70% wspólnych słów)?
+      return titleSimilarity(u.title, e.title) >= 0.7;
+    });
+    if (!isDuplicate) unique.push(e);
+  });
+  
+  // Krok 3: Zwiń powtarzalne (ten sam tytuł, różne daty)
+  const byTitle = new Map();
+  unique.forEach(e => {
     const tKey = normTitle(e.title);
     if (!byTitle.has(tKey)) byTitle.set(tKey, []);
     byTitle.get(tKey).push(e);
