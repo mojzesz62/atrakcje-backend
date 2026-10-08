@@ -41,12 +41,12 @@ function isJunk(title) {
 }
 
 /* === FILTR KATEGORII DO USUNIĘCIA === */
-const EXCLUDED_CATEGORIES = ['Wystawa'];
+const EXCLUDED_CATEGORIES = ['Wystawa', 'Teatr'];
 function isExcludedCategory(category) {
   return EXCLUDED_CATEGORIES.includes(category);
 }
 
-/* === cleanVenue – tylko ucinanie długich === */
+/* === cleanVenue === */
 function cleanVenue(venue, city) {
   let v = String(venue || '').replace(/\s+/g, ' ').trim();
   if (!v) return city;
@@ -169,7 +169,7 @@ function parseTuOpolskie(html) {
     const city = guessCity(title, venue, sourceHost);
     const category = guessCategory(title);
 
-    // NOWE: pomiń Wystawy
+    // Pomijamy wykluczone kategorie
     if (isExcludedCategory(category)) return;
 
     out.push(buildEvent({
