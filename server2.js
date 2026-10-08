@@ -40,12 +40,17 @@ function isJunk(title) {
   return JUNK_PATTERNS.some(re => re.test(String(title||'').trim()));
 }
 
-/* === cleanVenue – WYCOFANE, tylko ucinanie długich === */
+/* === FILTR KATEGORII DO USUNIĘCIA === */
+const EXCLUDED_CATEGORIES = ['Wystawa'];
+function isExcludedCategory(category) {
+  return EXCLUDED_CATEGORIES.includes(category);
+}
+
+/* === cleanVenue – tylko ucinanie długich === */
 function cleanVenue(venue, city) {
   let v = String(venue || '').replace(/\s+/g, ' ').trim();
   if (!v) return city;
   
-  // Odetnij długie fragmenty artykułów (> 100 znaków lub z "...")
   if (v.length > 100 || v.includes('…') || v.includes('...')) {
     const cut = v.split(/[.,]/)[0].trim();
     if (cut.length >= 3 && cut.length <= 60) return cut;
@@ -119,7 +124,6 @@ function guessCity(title, venue, sourceHost) {
     if (blob.includes(city.toLowerCase())) return city;
   }
   
-  // Rozszerzony regex hostów
   if (/opole\.pl|filharmonia\.opole|teatropole|galeriaopole|kinomeduza|mbp\.opole|muzeum\.opole|biletyna\.pl|faktyopole|halaopole|itakaarena|muzeumpiosenki|visitopolskie|teatr|filharmonia/.test(sourceHost)) return 'Opole';
   return 'Opolskie';
 }
@@ -163,6 +167,10 @@ function parseTuOpolskie(html) {
     }
 
     const city = guessCity(title, venue, sourceHost);
+    const category = guessCategory(title);
+
+    // NOWE: pomiń Wystawy
+    if (isExcludedCategory(category)) return;
 
     out.push(buildEvent({
       title,
@@ -174,7 +182,7 @@ function parseTuOpolskie(html) {
       description: venue ? `${title}. ${venue}` : title,
       sourceUrl,
       sourceName: 'tuopolskie.pl',
-      category: guessCategory(title)
+      category
     }));
   });
 
@@ -246,7 +254,7 @@ async function refreshAll(){
   for (const src of SOURCES){
     try {
       const items = await scrapeSource(src);
-      console.log(`[refresh] ${src.name}: ${items.length} wydarzeń`);
+      console.log(`[refresh] ${src.name}: ${items.length} wydarzeń (po filtrach)`);
       if (!items.length) problems.push(src.name+' (0)');
       all.push(...items);
     } catch (err){
